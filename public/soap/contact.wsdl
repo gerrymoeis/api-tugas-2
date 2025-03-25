@@ -1,0 +1,385 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions name="ContactService"
+             targetNamespace="http://localhost/contact-api/soap/contact"
+             xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:tns="http://localhost/contact-api/soap/contact"
+             xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+             xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+
+    <!-- Type definitions -->
+    <types>
+        <xsd:schema targetNamespace="http://localhost/contact-api/soap/contact">
+            <!-- User type -->
+            <xsd:complexType name="User">
+                <xsd:all>
+                    <xsd:element name="id" type="xsd:int" minOccurs="0"/>
+                    <xsd:element name="name" type="xsd:string"/>
+                    <xsd:element name="email" type="xsd:string"/>
+                    <xsd:element name="username" type="xsd:string" minOccurs="0"/>
+                </xsd:all>
+            </xsd:complexType>
+
+            <!-- Contact type -->
+            <xsd:complexType name="Contact">
+                <xsd:sequence>
+                    <xsd:element name="id" type="xsd:int" minOccurs="0"/>
+                    <xsd:element name="user_id" type="xsd:int"/>
+                    <xsd:element name="first_name" type="xsd:string"/>
+                    <xsd:element name="last_name" type="xsd:string"/>
+                    <xsd:element name="email" type="xsd:string"/>
+                    <xsd:element name="phone" type="xsd:string"/>
+                </xsd:sequence>
+            </xsd:complexType>
+
+            <!-- Address type -->
+            <xsd:complexType name="Address">
+                <xsd:sequence>
+                    <xsd:element name="id" type="xsd:int" minOccurs="0"/>
+                    <xsd:element name="contact_id" type="xsd:int"/>
+                    <xsd:element name="street" type="xsd:string"/>
+                    <xsd:element name="city" type="xsd:string"/>
+                    <xsd:element name="province" type="xsd:string"/>
+                    <xsd:element name="country" type="xsd:string"/>
+                    <xsd:element name="postal_code" type="xsd:string"/>
+                </xsd:sequence>
+            </xsd:complexType>
+
+            <!-- Response type -->
+            <xsd:complexType name="Response">
+                <xsd:sequence>
+                    <xsd:element name="success" type="xsd:boolean"/>
+                    <xsd:element name="message" type="xsd:string"/>
+                </xsd:sequence>
+            </xsd:complexType>
+
+            <!-- Contacts array type -->
+            <xsd:complexType name="ContactsArray">
+                <xsd:sequence>
+                    <xsd:element name="contact" type="tns:Contact" minOccurs="0" maxOccurs="unbounded"/>
+                </xsd:sequence>
+            </xsd:complexType>
+
+            <!-- Addresses array type -->
+            <xsd:complexType name="AddressesArray">
+                <xsd:sequence>
+                    <xsd:element name="address" type="tns:Address" minOccurs="0" maxOccurs="unbounded"/>
+                </xsd:sequence>
+            </xsd:complexType>
+
+            <!-- createUser -->
+            <xsd:element name="createUser">
+                <xsd:complexType>
+                    <xsd:sequence>
+                        <xsd:element name="user" type="tns:User"/>
+                    </xsd:sequence>
+                </xsd:complexType>
+            </xsd:element>
+
+            <!-- createUserResponse -->
+            <xsd:element name="createUserResponse">
+                <xsd:complexType>
+                    <xsd:sequence>
+                        <xsd:element name="response" type="tns:Response"/>
+                    </xsd:sequence>
+                </xsd:complexType>
+            </xsd:element>
+
+            <!-- getUser -->
+            <xsd:element name="getUser">
+                <xsd:complexType>
+                    <xsd:sequence>
+                        <xsd:element name="id" type="xsd:int"/>
+                    </xsd:sequence>
+                </xsd:complexType>
+            </xsd:element>
+
+            <!-- getUserResponse -->
+            <xsd:element name="getUserResponse">
+                <xsd:complexType>
+                    <xsd:sequence>
+                        <xsd:element name="user" type="tns:User"/>
+                    </xsd:sequence>
+                </xsd:complexType>
+            </xsd:element>
+        </xsd:schema>
+    </types>
+
+    <!-- User Messages -->
+    <message name="createUserRequest">
+        <part name="parameters" element="tns:createUser"/>
+    </message>
+    <message name="createUserResponse">
+        <part name="parameters" element="tns:createUserResponse"/>
+    </message>
+
+    <message name="getUserRequest">
+        <part name="parameters" element="tns:getUser"/>
+    </message>
+    <message name="getUserResponse">
+        <part name="parameters" element="tns:getUserResponse"/>
+    </message>
+
+    <!-- Contact Messages -->
+    <message name="createContactRequest">
+        <part name="contact" type="tns:Contact"/>
+    </message>
+    <message name="createContactResponse">
+        <part name="response" type="tns:Response"/>
+    </message>
+
+    <message name="getContactRequest">
+        <part name="id" type="xsd:int"/>
+    </message>
+    <message name="getContactResponse">
+        <part name="contact" type="tns:Contact"/>
+    </message>
+
+    <message name="updateContactRequest">
+        <part name="contact" type="tns:Contact"/>
+    </message>
+    <message name="updateContactResponse">
+        <part name="response" type="tns:Response"/>
+    </message>
+
+    <message name="deleteContactRequest">
+        <part name="id" type="xsd:int"/>
+    </message>
+    <message name="deleteContactResponse">
+        <part name="response" type="tns:Response"/>
+    </message>
+
+    <message name="getAllContactsRequest">
+        <part name="user_id" type="xsd:int"/>
+    </message>
+    <message name="getAllContactsResponse">
+        <part name="contacts" type="tns:ContactsArray"/>
+    </message>
+
+    <!-- Address Messages -->
+    <message name="createAddressRequest">
+        <part name="address" type="tns:Address"/>
+    </message>
+    <message name="createAddressResponse">
+        <part name="response" type="tns:Response"/>
+    </message>
+
+    <message name="getAddressRequest">
+        <part name="id" type="xsd:int"/>
+    </message>
+    <message name="getAddressResponse">
+        <part name="address" type="tns:Address"/>
+    </message>
+
+    <message name="updateAddressRequest">
+        <part name="address" type="tns:Address"/>
+    </message>
+    <message name="updateAddressResponse">
+        <part name="response" type="tns:Response"/>
+    </message>
+
+    <message name="deleteAddressRequest">
+        <part name="id" type="xsd:int"/>
+    </message>
+    <message name="deleteAddressResponse">
+        <part name="response" type="tns:Response"/>
+    </message>
+
+    <message name="getContactAddressesRequest">
+        <part name="contact_id" type="xsd:int"/>
+    </message>
+    <message name="getContactAddressesResponse">
+        <part name="addresses" type="tns:AddressesArray"/>
+    </message>
+
+    <!-- Port Type (Interface) -->
+    <portType name="ContactServicePortType">
+        <!-- User Operations -->
+        <operation name="createUser">
+            <input message="tns:createUserRequest"/>
+            <output message="tns:createUserResponse"/>
+        </operation>
+        <operation name="getUser">
+            <input message="tns:getUserRequest"/>
+            <output message="tns:getUserResponse"/>
+        </operation>
+
+        <!-- Contact Operations -->
+        <operation name="createContact">
+            <input message="tns:createContactRequest"/>
+            <output message="tns:createContactResponse"/>
+        </operation>
+        <operation name="getContact">
+            <input message="tns:getContactRequest"/>
+            <output message="tns:getContactResponse"/>
+        </operation>
+        <operation name="updateContact">
+            <input message="tns:updateContactRequest"/>
+            <output message="tns:updateContactResponse"/>
+        </operation>
+        <operation name="deleteContact">
+            <input message="tns:deleteContactRequest"/>
+            <output message="tns:deleteContactResponse"/>
+        </operation>
+        <operation name="getAllContacts">
+            <input message="tns:getAllContactsRequest"/>
+            <output message="tns:getAllContactsResponse"/>
+        </operation>
+
+        <!-- Address Operations -->
+        <operation name="createAddress">
+            <input message="tns:createAddressRequest"/>
+            <output message="tns:createAddressResponse"/>
+        </operation>
+        <operation name="getAddress">
+            <input message="tns:getAddressRequest"/>
+            <output message="tns:getAddressResponse"/>
+        </operation>
+        <operation name="updateAddress">
+            <input message="tns:updateAddressRequest"/>
+            <output message="tns:updateAddressResponse"/>
+        </operation>
+        <operation name="deleteAddress">
+            <input message="tns:deleteAddressRequest"/>
+            <output message="tns:deleteAddressResponse"/>
+        </operation>
+        <operation name="getContactAddresses">
+            <input message="tns:getContactAddressesRequest"/>
+            <output message="tns:getContactAddressesResponse"/>
+        </operation>
+    </portType>
+
+    <!-- Binding -->
+    <binding name="ContactServiceBinding" type="tns:ContactServicePortType">
+        <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+        
+        <!-- User Operations Bindings -->
+        <operation name="createUser">
+            <soap:operation soapAction="http://localhost/contact-api/soap/contact/createUser"/>
+            <input>
+                <soap:body use="encoded" namespace="http://localhost/contact-api/soap/contact" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+            </input>
+            <output>
+                <soap:body use="encoded" namespace="http://localhost/contact-api/soap/contact" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+            </output>
+        </operation>
+        
+        <operation name="getUser">
+            <soap:operation soapAction="http://localhost/contact-api/soap/contact/getUser"/>
+            <input>
+                <soap:body use="encoded" namespace="http://localhost/contact-api/soap/contact" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+            </input>
+            <output>
+                <soap:body use="encoded" namespace="http://localhost/contact-api/soap/contact" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+            </output>
+        </operation>
+        
+        <!-- Contact Operations Bindings -->
+        <operation name="createContact">
+            <soap:operation soapAction="http://localhost/contact-api/soap/contact/createContact"/>
+            <input>
+                <soap:body use="encoded" namespace="http://localhost/contact-api/soap/contact" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+            </input>
+            <output>
+                <soap:body use="encoded" namespace="http://localhost/contact-api/soap/contact" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+            </output>
+        </operation>
+        
+        <operation name="getContact">
+            <soap:operation soapAction="http://localhost/contact-api/soap/contact/getContact"/>
+            <input>
+                <soap:body use="encoded" namespace="http://localhost/contact-api/soap/contact" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+            </input>
+            <output>
+                <soap:body use="encoded" namespace="http://localhost/contact-api/soap/contact" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+            </output>
+        </operation>
+        
+        <operation name="updateContact">
+            <soap:operation soapAction="http://localhost/contact-api/soap/contact/updateContact"/>
+            <input>
+                <soap:body use="encoded" namespace="http://localhost/contact-api/soap/contact" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+            </input>
+            <output>
+                <soap:body use="encoded" namespace="http://localhost/contact-api/soap/contact" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+            </output>
+        </operation>
+        
+        <operation name="deleteContact">
+            <soap:operation soapAction="http://localhost/contact-api/soap/contact/deleteContact"/>
+            <input>
+                <soap:body use="encoded" namespace="http://localhost/contact-api/soap/contact" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+            </input>
+            <output>
+                <soap:body use="encoded" namespace="http://localhost/contact-api/soap/contact" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+            </output>
+        </operation>
+        
+        <operation name="getAllContacts">
+            <soap:operation soapAction="http://localhost/contact-api/soap/contact/getAllContacts"/>
+            <input>
+                <soap:body use="encoded" namespace="http://localhost/contact-api/soap/contact" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+            </input>
+            <output>
+                <soap:body use="encoded" namespace="http://localhost/contact-api/soap/contact" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+            </output>
+        </operation>
+        
+        <!-- Address Operations Bindings -->
+        <operation name="createAddress">
+            <soap:operation soapAction="http://localhost/contact-api/soap/contact/createAddress"/>
+            <input>
+                <soap:body use="encoded" namespace="http://localhost/contact-api/soap/contact" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+            </input>
+            <output>
+                <soap:body use="encoded" namespace="http://localhost/contact-api/soap/contact" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+            </output>
+        </operation>
+        
+        <operation name="getAddress">
+            <soap:operation soapAction="http://localhost/contact-api/soap/contact/getAddress"/>
+            <input>
+                <soap:body use="encoded" namespace="http://localhost/contact-api/soap/contact" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+            </input>
+            <output>
+                <soap:body use="encoded" namespace="http://localhost/contact-api/soap/contact" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+            </output>
+        </operation>
+        
+        <operation name="updateAddress">
+            <soap:operation soapAction="http://localhost/contact-api/soap/contact/updateAddress"/>
+            <input>
+                <soap:body use="encoded" namespace="http://localhost/contact-api/soap/contact" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+            </input>
+            <output>
+                <soap:body use="encoded" namespace="http://localhost/contact-api/soap/contact" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+            </output>
+        </operation>
+        
+        <operation name="deleteAddress">
+            <soap:operation soapAction="http://localhost/contact-api/soap/contact/deleteAddress"/>
+            <input>
+                <soap:body use="encoded" namespace="http://localhost/contact-api/soap/contact" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+            </input>
+            <output>
+                <soap:body use="encoded" namespace="http://localhost/contact-api/soap/contact" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+            </output>
+        </operation>
+        
+        <operation name="getContactAddresses">
+            <soap:operation soapAction="http://localhost/contact-api/soap/contact/getContactAddresses"/>
+            <input>
+                <soap:body use="encoded" namespace="http://localhost/contact-api/soap/contact" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+            </input>
+            <output>
+                <soap:body use="encoded" namespace="http://localhost/contact-api/soap/contact" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+            </output>
+        </operation>
+    </binding>
+
+    <!-- Service -->
+    <service name="ContactService">
+        <port name="ContactServicePort" binding="tns:ContactServiceBinding">
+            <soap:address location="http://localhost/contact-api/public/soap/server.php"/>
+        </port>
+    </service>
+</definitions>
