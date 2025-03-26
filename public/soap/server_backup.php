@@ -26,20 +26,16 @@ class ContactService
     public function createUser($user)
     {
         try {
+            // Handle different parameter formats (array or object)
+            $userData = [];
+            
             // Debug the input
             error_log('SOAP createUser input: ' . print_r($user, true));
             
-            // For WSDL mode, extract user from parameters
-            if (isset($user->user)) {
-                $user = $user->user;
-            }
             // For non-WSDL mode, the parameter comes as the first element of an array
-            elseif (is_array($user) && isset($user[0])) {
+            if (is_array($user) && isset($user[0])) {
                 $user = $user[0];
             }
-            
-            // Handle different parameter formats
-            $userData = [];
             
             if (is_array($user)) {
                 // Direct array parameter
@@ -48,7 +44,6 @@ class ContactService
                 // Object parameter
                 $userData['name'] = $user->name ?? null;
                 $userData['email'] = $user->email ?? null;
-                $userData['username'] = $user->username ?? null;
             } else {
                 // Unexpected format
                 return ['success' => false, 'message' => 'Invalid user data format'];
@@ -59,18 +54,15 @@ class ContactService
                 return ['success' => false, 'message' => 'Name and email are required'];
             }
             
-            // Check if user with this email already exists
-            $existingUser = User::where('email', $userData['email'])->first();
-            if ($existingUser) {
-                return ['success' => false, 'message' => 'User with this email already exists'];
-            }
+            // Generate a username from email
+            $username = explode('@', $userData['email'])[0];
             
             // Create the user
             $newUser = User::create([
                 'name' => $userData['name'],
                 'email' => $userData['email'],
-                'username' => $userData['username'] ?? '',
-                'password' => bcrypt('password') // Default password
+                'username' => $username,
+                'password' => bcrypt('password123') // Default password
             ]);
             
             return [
@@ -84,33 +76,22 @@ class ContactService
             return ['success' => false, 'message' => 'Error creating user: ' . $e->getMessage()];
         }
     }
-    
+
     /**
      * Get user by ID
      * 
-     * @param mixed $params User ID
-     * @return mixed User data or error response
+     * @param mixed $id User ID
+     * @return stdClass|array User data or error response
      */
-    public function getUser($params)
+    public function getUser($id)
     {
         try {
             // Debug the input
-            error_log('SOAP getUser input: ' . print_r($params, true));
+            error_log('SOAP getUser input: ' . print_r($id, true));
             
-            // Extract ID from different parameter formats
-            $id = null;
-            
-            // For WSDL mode
-            if (is_object($params) && isset($params->id)) {
-                $id = $params->id;
-            }
             // For non-WSDL mode, the parameter might come as an array
-            elseif (is_array($params) && isset($params[0])) {
-                $id = is_object($params[0]) && isset($params[0]->id) ? $params[0]->id : $params[0];
-            }
-            // Direct parameter
-            else {
-                $id = $params;
+            if (is_array($id) && isset($id[0])) {
+                $id = $id[0];
             }
             
             // Convert to integer
@@ -128,12 +109,11 @@ class ContactService
                 'username' => $user->username
             ];
         } catch (Exception $e) {
-            // Log the error for debugging
             error_log('SOAP getUser error: ' . $e->getMessage());
             return ['success' => false, 'message' => 'Error retrieving user: ' . $e->getMessage()];
         }
     }
-    
+
     /**
      * Create a new contact
      * 
@@ -146,12 +126,8 @@ class ContactService
             // Debug the input
             error_log('SOAP createContact input: ' . print_r($contact, true));
             
-            // For WSDL mode, extract contact from parameters
-            if (isset($contact->contact)) {
-                $contact = $contact->contact;
-            }
             // For non-WSDL mode, the parameter comes as the first element of an array
-            elseif (is_array($contact) && isset($contact[0])) {
+            if (is_array($contact) && isset($contact[0])) {
                 $contact = $contact[0];
             }
             
@@ -190,7 +166,7 @@ class ContactService
                 'first_name' => $contactData['first_name'],
                 'last_name' => $contactData['last_name'] ?? '',
                 'email' => $contactData['email'],
-                'phone' => $contactData['phone'] ?? ''
+                'phone' => $contactData['phone'] ?? null
             ]);
             
             return [
@@ -204,58 +180,27 @@ class ContactService
             return ['success' => false, 'message' => 'Error creating contact: ' . $e->getMessage()];
         }
     }
-    
+
     /**
      * Get contact by ID
      * 
-     * @param mixed $params Contact ID
-     * @return mixed Contact data or error response
+     * @param int $id Contact ID
+     * @return stdClass|array Contact data or error response
      */
-    public function getContact($params)
+    public function getContact($id)
     {
         try {
-            // Debug the input
-            error_log('SOAP getContact input: ' . print_r($params, true));
-            
-            // Extract ID from different parameter formats
-            $id = null;
-            
-            // For WSDL mode
-            if (is_object($params) && isset($params->id)) {
-                $id = $params->id;
-            }
-            // For non-WSDL mode, the parameter might come as an array
-            elseif (is_array($params) && isset($params[0])) {
-                $id = is_object($params[0]) && isset($params[0]->id) ? $params[0]->id : $params[0];
-            }
-            // Direct parameter
-            else {
-                $id = $params;
-            }
-            
-            // Convert to integer
-            $id = (int)$id;
-            
             $contact = Contact::find($id);
             if (!$contact) {
                 return ['success' => false, 'message' => 'Contact not found'];
             }
-            
-            return [
-                'id' => $contact->id,
-                'user_id' => $contact->user_id,
-                'first_name' => $contact->first_name,
-                'last_name' => $contact->last_name,
-                'email' => $contact->email,
-                'phone' => $contact->phone
-            ];
+
+            return $contact;
         } catch (Exception $e) {
-            // Log the error for debugging
-            error_log('SOAP getContact error: ' . $e->getMessage());
             return ['success' => false, 'message' => 'Error retrieving contact: ' . $e->getMessage()];
         }
     }
-    
+
     /**
      * Update an existing contact
      * 
@@ -268,12 +213,8 @@ class ContactService
             // Debug the input
             error_log('SOAP updateContact input: ' . print_r($contact, true));
             
-            // For WSDL mode, extract contact from parameters
-            if (isset($contact->contact)) {
-                $contact = $contact->contact;
-            }
             // For non-WSDL mode, the parameter comes as the first element of an array
-            elseif (is_array($contact) && isset($contact[0])) {
+            if (is_array($contact) && isset($contact[0])) {
                 $contact = $contact[0];
             }
             
@@ -318,33 +259,22 @@ class ContactService
             return ['success' => false, 'message' => 'Error updating contact: ' . $e->getMessage()];
         }
     }
-    
+
     /**
      * Delete a contact
      * 
-     * @param mixed $params Contact ID
+     * @param mixed $id Contact ID
      * @return array Response with success status and message
      */
-    public function deleteContact($params)
+    public function deleteContact($id)
     {
         try {
             // Debug the input
-            error_log('SOAP deleteContact input: ' . print_r($params, true));
+            error_log('SOAP deleteContact input: ' . print_r($id, true));
             
-            // Extract ID from different parameter formats
-            $id = null;
-            
-            // For WSDL mode
-            if (is_object($params) && isset($params->id)) {
-                $id = $params->id;
-            }
             // For non-WSDL mode, the parameter might come as an array
-            elseif (is_array($params) && isset($params[0])) {
-                $id = is_object($params[0]) && isset($params[0]->id) ? $params[0]->id : $params[0];
-            }
-            // Direct parameter
-            else {
-                $id = $params;
+            if (is_array($id) && isset($id[0])) {
+                $id = $id[0];
             }
             
             // Convert to integer
@@ -355,6 +285,10 @@ class ContactService
                 return ['success' => false, 'message' => 'Contact not found'];
             }
 
+            // Delete related addresses first
+            Address::where('contact_id', $id)->delete();
+            
+            // Delete the contact
             $contact->delete();
 
             return ['success' => true, 'message' => 'Contact deleted successfully'];
@@ -364,67 +298,23 @@ class ContactService
             return ['success' => false, 'message' => 'Error deleting contact: ' . $e->getMessage()];
         }
     }
-    
+
     /**
      * Get all contacts for a user
      * 
-     * @param mixed $params User ID
-     * @return array Contacts array or error response
+     * @param int $user_id User ID
+     * @return array Array of contacts
      */
-    public function getAllContacts($params)
+    public function getAllContacts($user_id)
     {
         try {
-            // Debug the input
-            error_log('SOAP getAllContacts input: ' . print_r($params, true));
-            
-            // Extract user_id from different parameter formats
-            $userId = null;
-            
-            // For WSDL mode
-            if (is_object($params) && isset($params->user_id)) {
-                $userId = $params->user_id;
-            }
-            // For non-WSDL mode, the parameter might come as an array
-            elseif (is_array($params) && isset($params[0])) {
-                $userId = is_object($params[0]) && isset($params[0]->user_id) ? $params[0]->user_id : $params[0];
-            }
-            // Direct parameter
-            else {
-                $userId = $params;
-            }
-            
-            // Convert to integer
-            $userId = (int)$userId;
-            
-            // Check if user exists
-            $user = User::find($userId);
-            if (!$user) {
-                return ['success' => false, 'message' => 'User not found'];
-            }
-            
-            // Get all contacts for this user
-            $contacts = Contact::where('user_id', $userId)->get();
-            
-            $result = [];
-            foreach ($contacts as $contact) {
-                $result[] = [
-                    'id' => $contact->id,
-                    'user_id' => $contact->user_id,
-                    'first_name' => $contact->first_name,
-                    'last_name' => $contact->last_name,
-                    'email' => $contact->email,
-                    'phone' => $contact->phone
-                ];
-            }
-            
-            return ['contact' => $result];
+            $contacts = Contact::where('user_id', $user_id)->get()->toArray();
+            return ['contact' => $contacts];
         } catch (Exception $e) {
-            // Log the error for debugging
-            error_log('SOAP getAllContacts error: ' . $e->getMessage());
-            return ['success' => false, 'message' => 'Error retrieving contacts: ' . $e->getMessage()];
+            return ['contact' => []];
         }
     }
-    
+
     /**
      * Create a new address
      * 
@@ -437,12 +327,8 @@ class ContactService
             // Debug the input
             error_log('SOAP createAddress input: ' . print_r($address, true));
             
-            // For WSDL mode, extract address from parameters
-            if (isset($address->address)) {
-                $address = $address->address;
-            }
             // For non-WSDL mode, the parameter comes as the first element of an array
-            elseif (is_array($address) && isset($address[0])) {
+            if (is_array($address) && isset($address[0])) {
                 $address = $address[0];
             }
             
@@ -497,59 +383,27 @@ class ContactService
             return ['success' => false, 'message' => 'Error creating address: ' . $e->getMessage()];
         }
     }
-    
+
     /**
      * Get address by ID
      * 
-     * @param mixed $params Address ID
-     * @return mixed Address data or error response
+     * @param int $id Address ID
+     * @return stdClass|array Address data or error response
      */
-    public function getAddress($params)
+    public function getAddress($id)
     {
         try {
-            // Debug the input
-            error_log('SOAP getAddress input: ' . print_r($params, true));
-            
-            // Extract ID from different parameter formats
-            $id = null;
-            
-            // For WSDL mode
-            if (is_object($params) && isset($params->id)) {
-                $id = $params->id;
-            }
-            // For non-WSDL mode, the parameter might come as an array
-            elseif (is_array($params) && isset($params[0])) {
-                $id = is_object($params[0]) && isset($params[0]->id) ? $params[0]->id : $params[0];
-            }
-            // Direct parameter
-            else {
-                $id = $params;
-            }
-            
-            // Convert to integer
-            $id = (int)$id;
-            
             $address = Address::find($id);
             if (!$address) {
                 return ['success' => false, 'message' => 'Address not found'];
             }
-            
-            return [
-                'id' => $address->id,
-                'contact_id' => $address->contact_id,
-                'street' => $address->street,
-                'city' => $address->city,
-                'province' => $address->province,
-                'country' => $address->country,
-                'postal_code' => $address->postal_code
-            ];
+
+            return $address;
         } catch (Exception $e) {
-            // Log the error for debugging
-            error_log('SOAP getAddress error: ' . $e->getMessage());
             return ['success' => false, 'message' => 'Error retrieving address: ' . $e->getMessage()];
         }
     }
-    
+
     /**
      * Update an existing address
      * 
@@ -562,12 +416,8 @@ class ContactService
             // Debug the input
             error_log('SOAP updateAddress input: ' . print_r($address, true));
             
-            // For WSDL mode, extract address from parameters
-            if (isset($address->address)) {
-                $address = $address->address;
-            }
             // For non-WSDL mode, the parameter comes as the first element of an array
-            elseif (is_array($address) && isset($address[0])) {
+            if (is_array($address) && isset($address[0])) {
                 $address = $address[0];
             }
             
@@ -614,33 +464,22 @@ class ContactService
             return ['success' => false, 'message' => 'Error updating address: ' . $e->getMessage()];
         }
     }
-    
+
     /**
      * Delete an address
      * 
-     * @param mixed $params Address ID
+     * @param mixed $id Address ID
      * @return array Response with success status and message
      */
-    public function deleteAddress($params)
+    public function deleteAddress($id)
     {
         try {
             // Debug the input
-            error_log('SOAP deleteAddress input: ' . print_r($params, true));
+            error_log('SOAP deleteAddress input: ' . print_r($id, true));
             
-            // Extract ID from different parameter formats
-            $id = null;
-            
-            // For WSDL mode
-            if (is_object($params) && isset($params->id)) {
-                $id = $params->id;
-            }
             // For non-WSDL mode, the parameter might come as an array
-            elseif (is_array($params) && isset($params[0])) {
-                $id = is_object($params[0]) && isset($params[0]->id) ? $params[0]->id : $params[0];
-            }
-            // Direct parameter
-            else {
-                $id = $params;
+            if (is_array($id) && isset($id[0])) {
+                $id = $id[0];
             }
             
             // Convert to integer
@@ -660,99 +499,47 @@ class ContactService
             return ['success' => false, 'message' => 'Error deleting address: ' . $e->getMessage()];
         }
     }
-    
+
     /**
      * Get all addresses for a contact
      * 
-     * @param mixed $params Contact ID
-     * @return array Addresses array or error response
+     * @param int $contact_id Contact ID
+     * @return array Array of addresses
      */
-    public function getContactAddresses($params)
+    public function getContactAddresses($contact_id)
     {
         try {
-            // Debug the input
-            error_log('SOAP getContactAddresses input: ' . print_r($params, true));
-            
-            // Extract contact_id from different parameter formats
-            $contactId = null;
-            
-            // For WSDL mode
-            if (is_object($params) && isset($params->contact_id)) {
-                $contactId = $params->contact_id;
-            }
-            // For non-WSDL mode, the parameter might come as an array
-            elseif (is_array($params) && isset($params[0])) {
-                $contactId = is_object($params[0]) && isset($params[0]->contact_id) ? $params[0]->contact_id : $params[0];
-            }
-            // Direct parameter
-            else {
-                $contactId = $params;
-            }
-            
-            // Convert to integer
-            $contactId = (int)$contactId;
-            
-            // Check if contact exists
-            $contact = Contact::find($contactId);
-            if (!$contact) {
-                return ['success' => false, 'message' => 'Contact not found'];
-            }
-            
-            // Get all addresses for this contact
-            $addresses = Address::where('contact_id', $contactId)->get();
-            
-            $result = [];
-            foreach ($addresses as $address) {
-                $result[] = [
-                    'id' => $address->id,
-                    'contact_id' => $address->contact_id,
-                    'street' => $address->street,
-                    'city' => $address->city,
-                    'province' => $address->province,
-                    'country' => $address->country,
-                    'postal_code' => $address->postal_code
-                ];
-            }
-            
-            return ['address' => $result];
+            $addresses = Address::where('contact_id', $contact_id)->get()->toArray();
+            return ['address' => $addresses];
         } catch (Exception $e) {
-            // Log the error for debugging
-            error_log('SOAP getContactAddresses error: ' . $e->getMessage());
-            return ['success' => false, 'message' => 'Error retrieving addresses: ' . $e->getMessage()];
+            return ['address' => []];
         }
     }
 }
 
-// Check if WSDL is requested
-if (isset($_GET['wsdl'])) {
-    // Serve the WSDL file
-    $wsdlPath = __DIR__ . '/contact.wsdl';
-    if (file_exists($wsdlPath)) {
-        header('Content-Type: text/xml');
-        readfile($wsdlPath);
-    } else {
-        header('HTTP/1.1 404 Not Found');
-        echo 'WSDL file not found';
+// Initialize SOAP Server
+try {
+    // Check if SOAP extension is loaded
+    if (!extension_loaded('soap')) {
+        header('Content-Type: text/plain');
+        echo 'Error: SOAP extension is not loaded. Please enable the SOAP extension in your PHP configuration.';
+        exit;
     }
-    exit;
+    
+    if (isset($_GET['wsdl'])) {
+        // Return the WSDL
+        header('Content-Type: text/xml');
+        readfile(__DIR__ . '/contact.wsdl');
+    } else {
+        // Handle SOAP request
+        $server = new SoapServer(null, [
+            'uri' => 'http://localhost/contact-api/soap/contact',
+            'encoding' => 'UTF-8'
+        ]);
+        $server->setClass('ContactService');
+        $server->handle();
+    }
+} catch (Exception $e) {
+    header('Content-Type: text/plain');
+    echo 'SOAP Server Error: ' . $e->getMessage();
 }
-
-// Create SOAP server
-$options = [
-    'uri' => 'http://localhost/contact-api/soap/contact'
-];
-
-// Check if WSDL mode is requested
-if (isset($_GET['mode']) && $_GET['mode'] === 'wsdl') {
-    $wsdlUrl = 'http://' . $_SERVER['HTTP_HOST'] . '/contact-api/public/soap/server.php?wsdl';
-    $server = new SoapServer($wsdlUrl, ['cache_wsdl' => WSDL_CACHE_NONE]);
-} else {
-    // Use non-WSDL mode (default)
-    $server = new SoapServer(null, $options);
-}
-
-// Set the class which contains the SOAP functions
-$server->setClass('ContactService');
-
-// Handle the request
-$server->handle();
