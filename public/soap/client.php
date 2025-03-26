@@ -1,8 +1,4 @@
 <?php
-/**
- * SOAP Client for Contact API
- * This client uses WSDL mode to interact with the SOAP server
- */
 
 // Enable error reporting for debugging
 ini_set('display_errors', 1);
@@ -22,12 +18,13 @@ if (!extension_loaded('soap')) {
 $result = null;
 $debug = [];
 $operation = isset($_POST['operation']) ? $_POST['operation'] : '';
+$activeTab = isset($_POST['activeTab']) ? $_POST['activeTab'] : 'user-tab';
 
 // Process form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         // Create SOAP client with WSDL
-        $wsdlUrl = 'http://localhost/contact-api/public/soap/contact.wsdl';
+        $wsdlUrl = 'http://localhost/contact-api/public/soap/api_documentation.wsdl';
         $client = new SoapClient($wsdlUrl, [
             'trace' => true,
             'exceptions' => true,
@@ -40,8 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'createUser':
                 $user = [
                     'name' => $_POST['name'],
-                    'email' => $_POST['email'],
-                    'username' => $_POST['username'] ?? ''
+                    'email' => $_POST['email'] ?? ''
                 ];
                 $result = $client->createUser(['user' => $user]);
                 break;
@@ -68,6 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
             case 'updateContact':
                 $contact = [
+                    'user_id' => (int)$_POST['user_id'],
                     'id' => (int)$_POST['id'],
                     'first_name' => $_POST['first_name'],
                     'last_name' => $_POST['last_name'],
@@ -104,6 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
             case 'updateAddress':
                 $address = [
+                    'contact_id' => (int)$_POST['contact_id'],
                     'id' => (int)$_POST['id'],
                     'street' => $_POST['street'],
                     'city' => $_POST['city'],
@@ -298,6 +296,18 @@ if (is_object($result)) {
                 grid-column: 1;
             }
         }
+        .data-table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        .data-table th, .data-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        .data-table th {
+            background-color: #f0f0f0;
+        }
     </style>
 </head>
 <body>
@@ -306,17 +316,18 @@ if (is_object($result)) {
         <h2>Gerry Moeis - 23091397164 - 2023E</h2>
         
         <div class="tabs">
-            <button class="tab active" onclick="openTab(event, 'user-tab')">User Operations</button>
-            <button class="tab" onclick="openTab(event, 'contact-tab')">Contact Operations</button>
-            <button class="tab" onclick="openTab(event, 'address-tab')">Address Operations</button>
+            <button class="tab <?php echo $activeTab === 'user-tab' ? 'active' : ''; ?>" onclick="openTab(event, 'user-tab')">User Operations</button>
+            <button class="tab <?php echo $activeTab === 'contact-tab' ? 'active' : ''; ?>" onclick="openTab(event, 'contact-tab')">Contact Operations</button>
+            <button class="tab <?php echo $activeTab === 'address-tab' ? 'active' : ''; ?>" onclick="openTab(event, 'address-tab')">Address Operations</button>
         </div>
         
         <!-- User Operations Tab -->
-        <div id="user-tab" class="tab-content active">
+        <div id="user-tab" class="tab-content <?php echo $activeTab === 'user-tab' ? 'active' : ''; ?>">
             <div class="card">
                 <h2>Create User</h2>
                 <form method="post">
                     <input type="hidden" name="operation" value="createUser">
+                    <input type="hidden" name="activeTab" value="user-tab">
                     
                     <div>
                         <label for="name">Name:</label>
@@ -326,11 +337,9 @@ if (is_object($result)) {
                     <div>
                         <label for="email">Email:</label>
                         <input type="email" id="email" name="email" required>
-                    </div>
-                    
-                    <div>
-                        <label for="username">Username (optional):</label>
-                        <input type="text" id="username" name="username">
+                        <small style="display: block; color: #a1a1aa; margin-top: 5px;">
+                            Email akan digunakan sebagai username
+                        </small>
                     </div>
                     
                     <button type="submit">Create User</button>
@@ -341,6 +350,7 @@ if (is_object($result)) {
                 <h2>Get User</h2>
                 <form method="post">
                     <input type="hidden" name="operation" value="getUser">
+                    <input type="hidden" name="activeTab" value="user-tab">
                     
                     <div>
                         <label for="user_id">User ID:</label>
@@ -353,11 +363,12 @@ if (is_object($result)) {
         </div>
         
         <!-- Contact Operations Tab -->
-        <div id="contact-tab" class="tab-content">
+        <div id="contact-tab" class="tab-content <?php echo $activeTab === 'contact-tab' ? 'active' : ''; ?>">
             <div class="card">
                 <h2>Create Contact</h2>
                 <form method="post">
                     <input type="hidden" name="operation" value="createContact">
+                    <input type="hidden" name="activeTab" value="contact-tab">
                     
                     <div>
                         <label for="contact_user_id">User ID:</label>
@@ -393,6 +404,7 @@ if (is_object($result)) {
                 <h2>Get Contact</h2>
                 <form method="post">
                     <input type="hidden" name="operation" value="getContact">
+                    <input type="hidden" name="activeTab" value="contact-tab">
                     
                     <div>
                         <label for="get_contact_id">Contact ID:</label>
@@ -407,7 +419,13 @@ if (is_object($result)) {
                 <h2>Update Contact</h2>
                 <form method="post">
                     <input type="hidden" name="operation" value="updateContact">
+                    <input type="hidden" name="activeTab" value="contact-tab">
                     
+                    <div>
+                        <label for="update_user_id">User ID:</label>
+                        <input type="number" id="update_user_id" name="user_id" required>
+                    </div>
+
                     <div>
                         <label for="update_contact_id">Contact ID:</label>
                         <input type="number" id="update_contact_id" name="id" required>
@@ -441,6 +459,7 @@ if (is_object($result)) {
                 <h2>Delete Contact</h2>
                 <form method="post">
                     <input type="hidden" name="operation" value="deleteContact">
+                    <input type="hidden" name="activeTab" value="contact-tab">
                     
                     <div>
                         <label for="delete_contact_id">Contact ID:</label>
@@ -455,6 +474,7 @@ if (is_object($result)) {
                 <h2>Get All Contacts for User</h2>
                 <form method="post">
                     <input type="hidden" name="operation" value="getAllContacts">
+                    <input type="hidden" name="activeTab" value="contact-tab">
                     
                     <div>
                         <label for="get_all_user_id">User ID:</label>
@@ -467,11 +487,12 @@ if (is_object($result)) {
         </div>
         
         <!-- Address Operations Tab -->
-        <div id="address-tab" class="tab-content">
+        <div id="address-tab" class="tab-content <?php echo $activeTab === 'address-tab' ? 'active' : ''; ?>">
             <div class="card">
                 <h2>Create Address</h2>
                 <form method="post">
                     <input type="hidden" name="operation" value="createAddress">
+                    <input type="hidden" name="activeTab" value="address-tab">
                     
                     <div>
                         <label for="address_contact_id">Contact ID:</label>
@@ -512,6 +533,7 @@ if (is_object($result)) {
                 <h2>Get Address</h2>
                 <form method="post">
                     <input type="hidden" name="operation" value="getAddress">
+                    <input type="hidden" name="activeTab" value="address-tab">
                     
                     <div>
                         <label for="get_address_id">Address ID:</label>
@@ -526,7 +548,13 @@ if (is_object($result)) {
                 <h2>Update Address</h2>
                 <form method="post">
                     <input type="hidden" name="operation" value="updateAddress">
+                    <input type="hidden" name="activeTab" value="address-tab">
                     
+                    <div>
+                        <label for="update_address_contact_id">Contact ID:</label>
+                        <input type="number" id="update_address_contact_id" name="contact_id" required>
+                    </div>
+
                     <div>
                         <label for="update_address_id">Address ID:</label>
                         <input type="number" id="update_address_id" name="id" required>
@@ -565,6 +593,7 @@ if (is_object($result)) {
                 <h2>Delete Address</h2>
                 <form method="post">
                     <input type="hidden" name="operation" value="deleteAddress">
+                    <input type="hidden" name="activeTab" value="address-tab">
                     
                     <div>
                         <label for="delete_address_id">Address ID:</label>
@@ -579,6 +608,7 @@ if (is_object($result)) {
                 <h2>Get All Addresses for Contact</h2>
                 <form method="post">
                     <input type="hidden" name="operation" value="getContactAddresses">
+                    <input type="hidden" name="activeTab" value="address-tab">
                     
                     <div>
                         <label for="get_addresses_contact_id">Contact ID:</label>
@@ -598,7 +628,16 @@ if (is_object($result)) {
             <?php elseif (isset($result['return']) && isset($result['return']['success'])): ?>
                 <?php if ($result['return']['success']): ?>
                     <div class="success">
-                        <?php echo htmlspecialchars($result['return']['message']); ?>
+                        <?php if (isset($result['return']['message'])): ?>
+                            <?php echo htmlspecialchars($result['return']['message']); ?>
+                        <?php elseif (isset($result['return']['addresses'])): ?>
+                            Berhasil mendapatkan <?php echo count($result['return']['addresses']); ?> alamat
+                        <?php elseif (isset($result['return']['contacts'])): ?>
+                            Berhasil mendapatkan <?php echo count($result['return']['contacts']); ?> kontak
+                        <?php else: ?>
+                            Operasi berhasil
+                        <?php endif; ?>
+                        
                         <?php if (isset($result['return']['user_id'])): ?>
                             <br>User ID: <?php echo htmlspecialchars($result['return']['user_id']); ?>
                         <?php endif; ?>
@@ -608,9 +647,63 @@ if (is_object($result)) {
                         <?php if (isset($result['return']['address_id'])): ?>
                             <br>Address ID: <?php echo htmlspecialchars($result['return']['address_id']); ?>
                         <?php endif; ?>
+                        
+                        <?php if (isset($result['return']['addresses']) && is_array($result['return']['addresses'])): ?>
+                            <h3>Daftar Alamat:</h3>
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Jalan</th>
+                                        <th>Kota</th>
+                                        <th>Provinsi</th>
+                                        <th>Negara</th>
+                                        <th>Kode Pos</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($result['return']['addresses'] as $address): ?>
+                                        <tr>
+                                            <td><?php echo htmlspecialchars($address['id']); ?></td>
+                                            <td><?php echo htmlspecialchars($address['street']); ?></td>
+                                            <td><?php echo htmlspecialchars($address['city']); ?></td>
+                                            <td><?php echo htmlspecialchars($address['province']); ?></td>
+                                            <td><?php echo htmlspecialchars($address['country']); ?></td>
+                                            <td><?php echo htmlspecialchars($address['postal_code']); ?></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        <?php endif; ?>
+                        
+                        <?php if (isset($result['return']['contacts']) && is_array($result['return']['contacts'])): ?>
+                            <h3>Daftar Kontak:</h3>
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Nama Depan</th>
+                                        <th>Nama Belakang</th>
+                                        <th>Email</th>
+                                        <th>Telepon</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($result['return']['contacts'] as $contact): ?>
+                                        <tr>
+                                            <td><?php echo htmlspecialchars($contact['id']); ?></td>
+                                            <td><?php echo htmlspecialchars($contact['first_name']); ?></td>
+                                            <td><?php echo htmlspecialchars($contact['last_name'] ?? ''); ?></td>
+                                            <td><?php echo htmlspecialchars($contact['email'] ?? ''); ?></td>
+                                            <td><?php echo htmlspecialchars($contact['phone'] ?? ''); ?></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        <?php endif; ?>
                     </div>
                 <?php else: ?>
-                    <div class="error">Error: <?php echo htmlspecialchars($result['return']['message']); ?></div>
+                    <div class="error">Error: <?php echo isset($result['return']['message']) ? htmlspecialchars($result['return']['message']) : 'Unknown error'; ?></div>
                 <?php endif; ?>
             <?php else: ?>
                 <pre><?php print_r($result); ?></pre>
@@ -664,11 +757,20 @@ Trace:
             // Show the current tab and add active class to the button
             document.getElementById(tabName).classList.add("active");
             evt.currentTarget.classList.add("active");
+            
+            // Update all forms to maintain this tab selection
+            var forms = document.getElementsByTagName("form");
+            for (i = 0; i < forms.length; i++) {
+                var activeTabInput = forms[i].querySelector('input[name="activeTab"]');
+                if (activeTabInput) {
+                    activeTabInput.value = tabName;
+                }
+            }
         }
         
         // Set default tab
         document.addEventListener('DOMContentLoaded', function() {
-            // User tab is set as default in HTML
+            // Active tab is set by PHP based on the form submission
         });
     </script>
 </body>

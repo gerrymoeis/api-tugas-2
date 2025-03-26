@@ -1,22 +1,74 @@
 <?php
+/**
+ * SOAP Server for Contact API
+ * Implementasi sederhana tanpa bergantung pada framework Laravel
+ */
 
-// Bootstrap Laravel application
-require __DIR__ . '/../../vendor/autoload.php';
-$app = require_once __DIR__ . '/../../bootstrap/app.php';
-$kernel = $app->make(Illuminate\Contracts\Http\Kernel::class);
-$response = $kernel->handle(
-    $request = Illuminate\Http\Request::capture()
-);
+// Enable error reporting for debugging
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
 
-use App\Models\Contact;
-use App\Models\Address;
-use App\Models\User;
+// Database connection (MySQL)
+try {
+    // Baca konfigurasi dari file .env
+    $envFile = __DIR__ . '/../../.env';
+    if (file_exists($envFile)) {
+        $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        $env = [];
+        foreach ($lines as $line) {
+            if (strpos($line, '#') === 0 || empty(trim($line))) {
+                continue;
+            }
+            
+            // Pisahkan key dan value, dan bersihkan komentar jika ada
+            if (strpos($line, '=') !== false) {
+                list($key, $value) = explode('=', $line, 2);
+                $key = trim($key);
+                $value = trim($value);
+                
+                // Hapus komentar pada value jika ada
+                if (strpos($value, '#') !== false) {
+                    $value = trim(explode('#', $value)[0]);
+                }
+                
+                $env[$key] = $value;
+            }
+        }
+    }
+
+    // Gunakan konfigurasi dari .env atau default
+    $dbHost = $env['DB_HOST'] ?? '127.0.0.1';
+    $dbPort = $env['DB_PORT'] ?? '3306';
+    $dbName = $env['DB_DATABASE'] ?? 'contact_api';
+    $dbUser = $env['DB_USERNAME'] ?? 'root';
+    $dbPass = $env['DB_PASSWORD'] ?? '';
+
+    // Buat koneksi PDO ke MySQL
+    $dsn = "mysql:host={$dbHost};port={$dbPort};dbname={$dbName};charset=utf8mb4";
+    $pdo = new PDO($dsn, $dbUser, $dbPass);
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+    
+    // Log koneksi berhasil
+    error_log("Database connection successful: {$dsn}");
+} catch (PDOException $e) {
+    // Log error
+    error_log("Database connection failed: " . $e->getMessage());
+    die("Database connection failed: " . $e->getMessage());
+}
 
 /**
- * ContactService class - Implements SOAP operations for Contact and Address
+ * Contact Service class for SOAP operations
  */
 class ContactService
 {
+    private $pdo;
+    
+    public function __construct($pdo) {
+        $this->pdo = $pdo;
+    }
+    
     /**
      * Create a new user
      * 
@@ -29,29 +81,17 @@ class ContactService
             // Debug the input
             error_log('SOAP createUser input: ' . print_r($user, true));
             
-            // For WSDL mode, extract user from parameters
-            if (isset($user->user)) {
-                $user = $user->user;
-            }
-            // For non-WSDL mode, the parameter comes as the first element of an array
-            elseif (is_array($user) && isset($user[0])) {
-                $user = $user[0];
-            }
-            
-            // Handle different parameter formats
+            // Extract user data from parameters
             $userData = [];
             
-            if (is_array($user)) {
-                // Direct array parameter
+            if (is_array($user) && isset($user['user'])) {
+                $userData = $user['user'];
+            } elseif (is_object($user) && isset($user->user)) {
+                $userData = (array)$user->user;
+            } elseif (is_array($user)) {
                 $userData = $user;
             } elseif (is_object($user)) {
-                // Object parameter
-                $userData['name'] = $user->name ?? null;
-                $userData['email'] = $user->email ?? null;
-                $userData['username'] = $user->username ?? null;
-            } else {
-                // Unexpected format
-                return ['success' => false, 'message' => 'Invalid user data format'];
+                $userData = (array)$user;
             }
             
             // Validate required fields
@@ -59,28 +99,34 @@ class ContactService
                 return ['success' => false, 'message' => 'Name and email are required'];
             }
             
-            // Check if user with this email already exists
-            $existingUser = User::where('email', $userData['email'])->first();
-            if ($existingUser) {
+            // Check if user with this username already exists
+            $stmt = $this->pdo->prepare("SELECT id FROM users WHERE username = ?");
+            $stmt->execute([$userData['email']]);
+            if ($stmt->fetch()) {
                 return ['success' => false, 'message' => 'User with this email already exists'];
             }
             
-            // Create the user
-            $newUser = User::create([
-                'name' => $userData['name'],
-                'email' => $userData['email'],
-                'username' => $userData['username'] ?? '',
-                'password' => bcrypt('password') // Default password
+            // Create the user with current timestamp
+            $currentTime = date('Y-m-d H:i:s');
+            $stmt = $this->pdo->prepare("INSERT INTO users (name, username, password, created_at, updated_at) VALUES (?, ?, ?, ?, ?)");
+            $stmt->execute([
+                $userData['name'],
+                $userData['email'], // Gunakan email sebagai username
+                password_hash('password', PASSWORD_DEFAULT), // Default password
+                $currentTime,
+                $currentTime
             ]);
+            
+            $userId = $this->pdo->lastInsertId();
             
             return [
                 'success' => true, 
                 'message' => 'User created successfully', 
-                'user_id' => $newUser->id
+                'user_id' => $userId
             ];
-        } catch (Exception $e) {
+        } catch (PDOException $e) {
             // Log the error for debugging
-            error_log('SOAP createUser error: ' . $e->getMessage() . ' | User data: ' . print_r($user, true));
+            error_log('SOAP createUser error: ' . $e->getMessage());
             return ['success' => false, 'message' => 'Error creating user: ' . $e->getMessage()];
         }
     }
@@ -94,40 +140,31 @@ class ContactService
     public function getUser($params)
     {
         try {
-            // Debug the input
-            error_log('SOAP getUser input: ' . print_r($params, true));
-            
-            // Extract ID from different parameter formats
+            // Extract ID from parameters
             $id = null;
             
-            // For WSDL mode
-            if (is_object($params) && isset($params->id)) {
+            if (is_array($params) && isset($params['id'])) {
+                $id = $params['id'];
+            } elseif (is_object($params) && isset($params->id)) {
                 $id = $params->id;
-            }
-            // For non-WSDL mode, the parameter might come as an array
-            elseif (is_array($params) && isset($params[0])) {
-                $id = is_object($params[0]) && isset($params[0]->id) ? $params[0]->id : $params[0];
-            }
-            // Direct parameter
-            else {
+            } else {
                 $id = $params;
             }
             
             // Convert to integer
             $id = (int)$id;
             
-            $user = User::find($id);
+            // Get user from database
+            $stmt = $this->pdo->prepare("SELECT id, name, username as email FROM users WHERE id = ?");
+            $stmt->execute([$id]);
+            $user = $stmt->fetch();
+            
             if (!$user) {
                 return ['success' => false, 'message' => 'User not found'];
             }
             
-            return [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'username' => $user->username
-            ];
-        } catch (Exception $e) {
+            return $user;
+        } catch (PDOException $e) {
             // Log the error for debugging
             error_log('SOAP getUser error: ' . $e->getMessage());
             return ['success' => false, 'message' => 'Error retrieving user: ' . $e->getMessage()];
@@ -146,61 +183,54 @@ class ContactService
             // Debug the input
             error_log('SOAP createContact input: ' . print_r($contact, true));
             
-            // For WSDL mode, extract contact from parameters
-            if (isset($contact->contact)) {
-                $contact = $contact->contact;
-            }
-            // For non-WSDL mode, the parameter comes as the first element of an array
-            elseif (is_array($contact) && isset($contact[0])) {
-                $contact = $contact[0];
-            }
-            
-            // Handle different parameter formats
+            // Extract contact data from parameters
             $contactData = [];
             
-            if (is_array($contact)) {
-                // Direct array parameter
+            if (is_array($contact) && isset($contact['contact'])) {
+                $contactData = $contact['contact'];
+            } elseif (is_object($contact) && isset($contact->contact)) {
+                $contactData = (array)$contact->contact;
+            } elseif (is_array($contact)) {
                 $contactData = $contact;
             } elseif (is_object($contact)) {
-                // Object parameter
-                $contactData['user_id'] = $contact->user_id ?? null;
-                $contactData['first_name'] = $contact->first_name ?? null;
-                $contactData['last_name'] = $contact->last_name ?? null;
-                $contactData['email'] = $contact->email ?? null;
-                $contactData['phone'] = $contact->phone ?? null;
-            } else {
-                // Unexpected format
-                return ['success' => false, 'message' => 'Invalid contact data format'];
+                $contactData = (array)$contact;
             }
             
             // Validate required fields
-            if (empty($contactData['user_id']) || empty($contactData['first_name']) || empty($contactData['email'])) {
-                return ['success' => false, 'message' => 'User ID, first name, and email are required'];
+            if (empty($contactData['user_id']) || empty($contactData['first_name'])) {
+                return ['success' => false, 'message' => 'User ID and first name are required'];
             }
             
             // Check if user exists
-            $user = User::find($contactData['user_id']);
-            if (!$user) {
+            $stmt = $this->pdo->prepare("SELECT id FROM users WHERE id = ?");
+            $stmt->execute([(int)$contactData['user_id']]);
+            if (!$stmt->fetch()) {
                 return ['success' => false, 'message' => 'User not found'];
             }
             
-            // Create the contact
-            $newContact = Contact::create([
-                'user_id' => $contactData['user_id'],
-                'first_name' => $contactData['first_name'],
-                'last_name' => $contactData['last_name'] ?? '',
-                'email' => $contactData['email'],
-                'phone' => $contactData['phone'] ?? ''
+            // Create the contact with current timestamp
+            $currentTime = date('Y-m-d H:i:s');
+            $stmt = $this->pdo->prepare("INSERT INTO contacts (user_id, first_name, last_name, email, phone, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([
+                (int)$contactData['user_id'],
+                $contactData['first_name'],
+                $contactData['last_name'] ?? null,
+                $contactData['email'] ?? null,
+                $contactData['phone'] ?? null,
+                $currentTime,
+                $currentTime
             ]);
+            
+            $contactId = $this->pdo->lastInsertId();
             
             return [
                 'success' => true, 
                 'message' => 'Contact created successfully', 
-                'contact_id' => $newContact->id
+                'contact_id' => $contactId
             ];
-        } catch (Exception $e) {
+        } catch (PDOException $e) {
             // Log the error for debugging
-            error_log('SOAP createContact error: ' . $e->getMessage() . ' | Contact data: ' . print_r($contact, true));
+            error_log('SOAP createContact error: ' . $e->getMessage());
             return ['success' => false, 'message' => 'Error creating contact: ' . $e->getMessage()];
         }
     }
@@ -214,42 +244,31 @@ class ContactService
     public function getContact($params)
     {
         try {
-            // Debug the input
-            error_log('SOAP getContact input: ' . print_r($params, true));
-            
-            // Extract ID from different parameter formats
+            // Extract ID from parameters
             $id = null;
             
-            // For WSDL mode
-            if (is_object($params) && isset($params->id)) {
+            if (is_array($params) && isset($params['id'])) {
+                $id = $params['id'];
+            } elseif (is_object($params) && isset($params->id)) {
                 $id = $params->id;
-            }
-            // For non-WSDL mode, the parameter might come as an array
-            elseif (is_array($params) && isset($params[0])) {
-                $id = is_object($params[0]) && isset($params[0]->id) ? $params[0]->id : $params[0];
-            }
-            // Direct parameter
-            else {
+            } else {
                 $id = $params;
             }
             
             // Convert to integer
             $id = (int)$id;
             
-            $contact = Contact::find($id);
+            // Get contact from database
+            $stmt = $this->pdo->prepare("SELECT * FROM contacts WHERE id = ?");
+            $stmt->execute([$id]);
+            $contact = $stmt->fetch();
+            
             if (!$contact) {
                 return ['success' => false, 'message' => 'Contact not found'];
             }
             
-            return [
-                'id' => $contact->id,
-                'user_id' => $contact->user_id,
-                'first_name' => $contact->first_name,
-                'last_name' => $contact->last_name,
-                'email' => $contact->email,
-                'phone' => $contact->phone
-            ];
-        } catch (Exception $e) {
+            return $contact;
+        } catch (PDOException $e) {
             // Log the error for debugging
             error_log('SOAP getContact error: ' . $e->getMessage());
             return ['success' => false, 'message' => 'Error retrieving contact: ' . $e->getMessage()];
@@ -257,64 +276,93 @@ class ContactService
     }
     
     /**
-     * Update an existing contact
+     * Update a contact
      * 
-     * @param mixed $contact Contact data with ID
+     * @param mixed $params Contact data with ID
      * @return array Response with success status and message
      */
-    public function updateContact($contact)
+    public function updateContact($params)
     {
         try {
             // Debug the input
-            error_log('SOAP updateContact input: ' . print_r($contact, true));
+            error_log('SOAP updateContact input: ' . print_r($params, true));
             
-            // For WSDL mode, extract contact from parameters
-            if (isset($contact->contact)) {
-                $contact = $contact->contact;
-            }
-            // For non-WSDL mode, the parameter comes as the first element of an array
-            elseif (is_array($contact) && isset($contact[0])) {
-                $contact = $contact[0];
-            }
-            
-            // Handle different parameter formats
+            // Extract contact data from parameters
             $contactData = [];
             
-            if (is_array($contact)) {
-                // Direct array parameter
-                $contactData = $contact;
-            } elseif (is_object($contact)) {
-                // Object parameter
-                $contactData['id'] = $contact->id ?? null;
-                $contactData['first_name'] = $contact->first_name ?? null;
-                $contactData['last_name'] = $contact->last_name ?? null;
-                $contactData['email'] = $contact->email ?? null;
-                $contactData['phone'] = $contact->phone ?? null;
-            } else {
-                // Unexpected format
-                return ['success' => false, 'message' => 'Invalid contact data format'];
+            if (is_array($params) && isset($params['contact'])) {
+                $contactData = $params['contact'];
+            } elseif (is_object($params) && isset($params->contact)) {
+                $contactData = (array)$params->contact;
+            } elseif (is_array($params)) {
+                $contactData = $params;
+            } elseif (is_object($params)) {
+                $contactData = (array)$params;
             }
             
             // Validate required fields
-            if (empty($contactData['id']) || empty($contactData['first_name']) || empty($contactData['email'])) {
-                return ['success' => false, 'message' => 'Contact ID, first name, and email are required'];
+            if (empty($contactData['id'])) {
+                return ['success' => false, 'message' => 'Contact ID is required'];
             }
             
-            $existingContact = Contact::find($contactData['id']);
-            if (!$existingContact) {
-                return ['success' => false, 'message' => 'Contact not found'];
+            if (empty($contactData['user_id'])) {
+                return ['success' => false, 'message' => 'User ID is required'];
             }
-
-            $existingContact->first_name = $contactData['first_name'];
-            $existingContact->last_name = $contactData['last_name'] ?? $existingContact->last_name;
-            $existingContact->email = $contactData['email'];
-            $existingContact->phone = $contactData['phone'] ?? $existingContact->phone;
-            $existingContact->save();
-
-            return ['success' => true, 'message' => 'Contact updated successfully'];
-        } catch (Exception $e) {
+            
+            // Check if contact exists and belongs to the user
+            $stmt = $this->pdo->prepare("SELECT id FROM contacts WHERE id = ? AND user_id = ?");
+            $stmt->execute([(int)$contactData['id'], (int)$contactData['user_id']]);
+            if (!$stmt->fetch()) {
+                return ['success' => false, 'message' => 'Contact not found or does not belong to the specified user'];
+            }
+            
+            // Build update query dynamically based on provided fields
+            $updateFields = [];
+            $params = [];
+            
+            if (isset($contactData['first_name'])) {
+                $updateFields[] = "first_name = ?";
+                $params[] = $contactData['first_name'];
+            }
+            
+            if (isset($contactData['last_name'])) {
+                $updateFields[] = "last_name = ?";
+                $params[] = $contactData['last_name'];
+            }
+            
+            if (isset($contactData['email'])) {
+                $updateFields[] = "email = ?";
+                $params[] = $contactData['email'];
+            }
+            
+            if (isset($contactData['phone'])) {
+                $updateFields[] = "phone = ?";
+                $params[] = $contactData['phone'];
+            }
+            
+            if (empty($updateFields)) {
+                return ['success' => false, 'message' => 'No fields to update'];
+            }
+            
+            // Add updated_at timestamp
+            $updateFields[] = "updated_at = ?";
+            $params[] = date('Y-m-d H:i:s');
+            
+            // Add contact ID to params
+            $params[] = (int)$contactData['id'];
+            
+            // Update the contact
+            $sql = "UPDATE contacts SET " . implode(", ", $updateFields) . " WHERE id = ?";
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute($params);
+            
+            return [
+                'success' => true, 
+                'message' => 'Contact updated successfully'
+            ];
+        } catch (PDOException $e) {
             // Log the error for debugging
-            error_log('SOAP updateContact error: ' . $e->getMessage() . ' | Contact data: ' . print_r($contact, true));
+            error_log('SOAP updateContact error: ' . $e->getMessage());
             return ['success' => false, 'message' => 'Error updating contact: ' . $e->getMessage()];
         }
     }
@@ -328,37 +376,40 @@ class ContactService
     public function deleteContact($params)
     {
         try {
-            // Debug the input
-            error_log('SOAP deleteContact input: ' . print_r($params, true));
-            
-            // Extract ID from different parameter formats
+            // Extract ID from parameters
             $id = null;
             
-            // For WSDL mode
-            if (is_object($params) && isset($params->id)) {
+            if (is_array($params) && isset($params['id'])) {
+                $id = $params['id'];
+            } elseif (is_object($params) && isset($params->id)) {
                 $id = $params->id;
-            }
-            // For non-WSDL mode, the parameter might come as an array
-            elseif (is_array($params) && isset($params[0])) {
-                $id = is_object($params[0]) && isset($params[0]->id) ? $params[0]->id : $params[0];
-            }
-            // Direct parameter
-            else {
+            } else {
                 $id = $params;
             }
             
             // Convert to integer
             $id = (int)$id;
             
-            $contact = Contact::find($id);
-            if (!$contact) {
+            // Check if contact exists
+            $stmt = $this->pdo->prepare("SELECT id FROM contacts WHERE id = ?");
+            $stmt->execute([$id]);
+            if (!$stmt->fetch()) {
                 return ['success' => false, 'message' => 'Contact not found'];
             }
-
-            $contact->delete();
-
-            return ['success' => true, 'message' => 'Contact deleted successfully'];
-        } catch (Exception $e) {
+            
+            // Delete related addresses first (foreign key constraint)
+            $stmt = $this->pdo->prepare("DELETE FROM addresses WHERE contact_id = ?");
+            $stmt->execute([$id]);
+            
+            // Delete the contact
+            $stmt = $this->pdo->prepare("DELETE FROM contacts WHERE id = ?");
+            $stmt->execute([$id]);
+            
+            return [
+                'success' => true, 
+                'message' => 'Contact deleted successfully'
+            ];
+        } catch (PDOException $e) {
             // Log the error for debugging
             error_log('SOAP deleteContact error: ' . $e->getMessage());
             return ['success' => false, 'message' => 'Error deleting contact: ' . $e->getMessage()];
@@ -369,27 +420,19 @@ class ContactService
      * Get all contacts for a user
      * 
      * @param mixed $params User ID
-     * @return array Contacts array or error response
+     * @return mixed List of contacts or error response
      */
     public function getAllContacts($params)
     {
         try {
-            // Debug the input
-            error_log('SOAP getAllContacts input: ' . print_r($params, true));
-            
-            // Extract user_id from different parameter formats
+            // Extract user ID from parameters
             $userId = null;
             
-            // For WSDL mode
-            if (is_object($params) && isset($params->user_id)) {
+            if (is_array($params) && isset($params['user_id'])) {
+                $userId = $params['user_id'];
+            } elseif (is_object($params) && isset($params->user_id)) {
                 $userId = $params->user_id;
-            }
-            // For non-WSDL mode, the parameter might come as an array
-            elseif (is_array($params) && isset($params[0])) {
-                $userId = is_object($params[0]) && isset($params[0]->user_id) ? $params[0]->user_id : $params[0];
-            }
-            // Direct parameter
-            else {
+            } else {
                 $userId = $params;
             }
             
@@ -397,28 +440,22 @@ class ContactService
             $userId = (int)$userId;
             
             // Check if user exists
-            $user = User::find($userId);
-            if (!$user) {
+            $stmt = $this->pdo->prepare("SELECT id FROM users WHERE id = ?");
+            $stmt->execute([$userId]);
+            if (!$stmt->fetch()) {
                 return ['success' => false, 'message' => 'User not found'];
             }
             
-            // Get all contacts for this user
-            $contacts = Contact::where('user_id', $userId)->get();
+            // Get all contacts for the user
+            $stmt = $this->pdo->prepare("SELECT * FROM contacts WHERE user_id = ?");
+            $stmt->execute([$userId]);
+            $contacts = $stmt->fetchAll();
             
-            $result = [];
-            foreach ($contacts as $contact) {
-                $result[] = [
-                    'id' => $contact->id,
-                    'user_id' => $contact->user_id,
-                    'first_name' => $contact->first_name,
-                    'last_name' => $contact->last_name,
-                    'email' => $contact->email,
-                    'phone' => $contact->phone
-                ];
-            }
-            
-            return ['contact' => $result];
-        } catch (Exception $e) {
+            return [
+                'success' => true,
+                'contacts' => $contacts
+            ];
+        } catch (PDOException $e) {
             // Log the error for debugging
             error_log('SOAP getAllContacts error: ' . $e->getMessage());
             return ['success' => false, 'message' => 'Error retrieving contacts: ' . $e->getMessage()];
@@ -426,7 +463,7 @@ class ContactService
     }
     
     /**
-     * Create a new address
+     * Create a new address for a contact
      * 
      * @param mixed $address Address data
      * @return array Response with success status and message
@@ -437,63 +474,55 @@ class ContactService
             // Debug the input
             error_log('SOAP createAddress input: ' . print_r($address, true));
             
-            // For WSDL mode, extract address from parameters
-            if (isset($address->address)) {
-                $address = $address->address;
-            }
-            // For non-WSDL mode, the parameter comes as the first element of an array
-            elseif (is_array($address) && isset($address[0])) {
-                $address = $address[0];
-            }
-            
-            // Handle different parameter formats
+            // Extract address data from parameters
             $addressData = [];
             
-            if (is_array($address)) {
-                // Direct array parameter
+            if (is_array($address) && isset($address['address'])) {
+                $addressData = $address['address'];
+            } elseif (is_object($address) && isset($address->address)) {
+                $addressData = (array)$address->address;
+            } elseif (is_array($address)) {
                 $addressData = $address;
             } elseif (is_object($address)) {
-                // Object parameter
-                $addressData['contact_id'] = $address->contact_id ?? null;
-                $addressData['street'] = $address->street ?? null;
-                $addressData['city'] = $address->city ?? null;
-                $addressData['province'] = $address->province ?? null;
-                $addressData['country'] = $address->country ?? null;
-                $addressData['postal_code'] = $address->postal_code ?? null;
-            } else {
-                // Unexpected format
-                return ['success' => false, 'message' => 'Invalid address data format'];
+                $addressData = (array)$address;
             }
             
             // Validate required fields
-            if (empty($addressData['contact_id']) || empty($addressData['street']) || empty($addressData['city'])) {
-                return ['success' => false, 'message' => 'Contact ID, street, and city are required'];
+            if (empty($addressData['contact_id']) || empty($addressData['country'])) {
+                return ['success' => false, 'message' => 'Contact ID and country are required'];
             }
             
             // Check if contact exists
-            $contact = Contact::find($addressData['contact_id']);
-            if (!$contact) {
+            $stmt = $this->pdo->prepare("SELECT id FROM contacts WHERE id = ?");
+            $stmt->execute([(int)$addressData['contact_id']]);
+            if (!$stmt->fetch()) {
                 return ['success' => false, 'message' => 'Contact not found'];
             }
             
-            // Create the address
-            $newAddress = Address::create([
-                'contact_id' => $addressData['contact_id'],
-                'street' => $addressData['street'],
-                'city' => $addressData['city'],
-                'province' => $addressData['province'] ?? '',
-                'country' => $addressData['country'] ?? '',
-                'postal_code' => $addressData['postal_code'] ?? ''
+            // Create the address with current timestamp
+            $currentTime = date('Y-m-d H:i:s');
+            $stmt = $this->pdo->prepare("INSERT INTO addresses (contact_id, street, city, province, country, postal_code, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([
+                (int)$addressData['contact_id'],
+                $addressData['street'] ?? null,
+                $addressData['city'] ?? null,
+                $addressData['province'] ?? null,
+                $addressData['country'],
+                $addressData['postal_code'] ?? null,
+                $currentTime,
+                $currentTime
             ]);
+            
+            $addressId = $this->pdo->lastInsertId();
             
             return [
                 'success' => true, 
                 'message' => 'Address created successfully', 
-                'address_id' => $newAddress->id
+                'address_id' => $addressId
             ];
-        } catch (Exception $e) {
+        } catch (PDOException $e) {
             // Log the error for debugging
-            error_log('SOAP createAddress error: ' . $e->getMessage() . ' | Address data: ' . print_r($address, true));
+            error_log('SOAP createAddress error: ' . $e->getMessage());
             return ['success' => false, 'message' => 'Error creating address: ' . $e->getMessage()];
         }
     }
@@ -507,43 +536,31 @@ class ContactService
     public function getAddress($params)
     {
         try {
-            // Debug the input
-            error_log('SOAP getAddress input: ' . print_r($params, true));
-            
-            // Extract ID from different parameter formats
+            // Extract ID from parameters
             $id = null;
             
-            // For WSDL mode
-            if (is_object($params) && isset($params->id)) {
+            if (is_array($params) && isset($params['id'])) {
+                $id = $params['id'];
+            } elseif (is_object($params) && isset($params->id)) {
                 $id = $params->id;
-            }
-            // For non-WSDL mode, the parameter might come as an array
-            elseif (is_array($params) && isset($params[0])) {
-                $id = is_object($params[0]) && isset($params[0]->id) ? $params[0]->id : $params[0];
-            }
-            // Direct parameter
-            else {
+            } else {
                 $id = $params;
             }
             
             // Convert to integer
             $id = (int)$id;
             
-            $address = Address::find($id);
+            // Get address from database
+            $stmt = $this->pdo->prepare("SELECT * FROM addresses WHERE id = ?");
+            $stmt->execute([$id]);
+            $address = $stmt->fetch();
+            
             if (!$address) {
                 return ['success' => false, 'message' => 'Address not found'];
             }
             
-            return [
-                'id' => $address->id,
-                'contact_id' => $address->contact_id,
-                'street' => $address->street,
-                'city' => $address->city,
-                'province' => $address->province,
-                'country' => $address->country,
-                'postal_code' => $address->postal_code
-            ];
-        } catch (Exception $e) {
+            return $address;
+        } catch (PDOException $e) {
             // Log the error for debugging
             error_log('SOAP getAddress error: ' . $e->getMessage());
             return ['success' => false, 'message' => 'Error retrieving address: ' . $e->getMessage()];
@@ -551,66 +568,105 @@ class ContactService
     }
     
     /**
-     * Update an existing address
+     * Update an address
      * 
-     * @param mixed $address Address data with ID
+     * @param mixed $params Address data with ID
      * @return array Response with success status and message
      */
-    public function updateAddress($address)
+    public function updateAddress($params)
     {
         try {
             // Debug the input
-            error_log('SOAP updateAddress input: ' . print_r($address, true));
+            error_log('SOAP updateAddress input: ' . print_r($params, true));
             
-            // For WSDL mode, extract address from parameters
-            if (isset($address->address)) {
-                $address = $address->address;
-            }
-            // For non-WSDL mode, the parameter comes as the first element of an array
-            elseif (is_array($address) && isset($address[0])) {
-                $address = $address[0];
-            }
-            
-            // Handle different parameter formats
+            // Extract address data from parameters
             $addressData = [];
             
-            if (is_array($address)) {
-                // Direct array parameter
-                $addressData = $address;
-            } elseif (is_object($address)) {
-                // Object parameter
-                $addressData['id'] = $address->id ?? null;
-                $addressData['street'] = $address->street ?? null;
-                $addressData['city'] = $address->city ?? null;
-                $addressData['province'] = $address->province ?? null;
-                $addressData['country'] = $address->country ?? null;
-                $addressData['postal_code'] = $address->postal_code ?? null;
-            } else {
-                // Unexpected format
-                return ['success' => false, 'message' => 'Invalid address data format'];
+            if (is_array($params) && isset($params['address'])) {
+                $addressData = $params['address'];
+            } elseif (is_object($params) && isset($params->address)) {
+                $addressData = (array)$params->address;
+            } elseif (is_array($params)) {
+                $addressData = $params;
+            } elseif (is_object($params)) {
+                $addressData = (array)$params;
             }
             
             // Validate required fields
-            if (empty($addressData['id']) || empty($addressData['street']) || empty($addressData['city'])) {
-                return ['success' => false, 'message' => 'Address ID, street, and city are required'];
+            if (empty($addressData['id'])) {
+                return ['success' => false, 'message' => 'Address ID is required'];
             }
-
-            $existingAddress = Address::find($addressData['id']);
-            if (!$existingAddress) {
+            
+            if (empty($addressData['contact_id'])) {
+                return ['success' => false, 'message' => 'Contact ID is required'];
+            }
+            
+            // Check if address exists
+            $stmt = $this->pdo->prepare("SELECT a.id FROM addresses a JOIN contacts c ON a.contact_id = c.id WHERE a.id = ?");
+            $stmt->execute([(int)$addressData['id']]);
+            if (!$stmt->fetch()) {
                 return ['success' => false, 'message' => 'Address not found'];
             }
-
-            $existingAddress->street = $addressData['street'];
-            $existingAddress->city = $addressData['city'];
-            $existingAddress->province = $addressData['province'] ?? $existingAddress->province;
-            $existingAddress->country = $addressData['country'] ?? $existingAddress->country;
-            $existingAddress->postal_code = $addressData['postal_code'] ?? $existingAddress->postal_code;
-            $existingAddress->save();
-
-            return ['success' => true, 'message' => 'Address updated successfully'];
-        } catch (Exception $e) {
+            
+            // Check if address belongs to the specified contact
+            $stmt = $this->pdo->prepare("SELECT id FROM addresses WHERE id = ? AND contact_id = ?");
+            $stmt->execute([(int)$addressData['id'], (int)$addressData['contact_id']]);
+            if (!$stmt->fetch()) {
+                return ['success' => false, 'message' => 'Address does not belong to the specified contact'];
+            }
+            
+            // Build update query dynamically based on provided fields
+            $updateFields = [];
+            $params = [];
+            
+            if (isset($addressData['street'])) {
+                $updateFields[] = "street = ?";
+                $params[] = $addressData['street'];
+            }
+            
+            if (isset($addressData['city'])) {
+                $updateFields[] = "city = ?";
+                $params[] = $addressData['city'];
+            }
+            
+            if (isset($addressData['province'])) {
+                $updateFields[] = "province = ?";
+                $params[] = $addressData['province'];
+            }
+            
+            if (isset($addressData['country'])) {
+                $updateFields[] = "country = ?";
+                $params[] = $addressData['country'];
+            }
+            
+            if (isset($addressData['postal_code'])) {
+                $updateFields[] = "postal_code = ?";
+                $params[] = $addressData['postal_code'];
+            }
+            
+            if (empty($updateFields)) {
+                return ['success' => false, 'message' => 'No fields to update'];
+            }
+            
+            // Add updated_at timestamp
+            $updateFields[] = "updated_at = ?";
+            $params[] = date('Y-m-d H:i:s');
+            
+            // Add address ID to params
+            $params[] = (int)$addressData['id'];
+            
+            // Update the address
+            $sql = "UPDATE addresses SET " . implode(", ", $updateFields) . " WHERE id = ?";
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute($params);
+            
+            return [
+                'success' => true, 
+                'message' => 'Address updated successfully'
+            ];
+        } catch (PDOException $e) {
             // Log the error for debugging
-            error_log('SOAP updateAddress error: ' . $e->getMessage() . ' | Address data: ' . print_r($address, true));
+            error_log('SOAP updateAddress error: ' . $e->getMessage());
             return ['success' => false, 'message' => 'Error updating address: ' . $e->getMessage()];
         }
     }
@@ -624,37 +680,36 @@ class ContactService
     public function deleteAddress($params)
     {
         try {
-            // Debug the input
-            error_log('SOAP deleteAddress input: ' . print_r($params, true));
-            
-            // Extract ID from different parameter formats
+            // Extract ID from parameters
             $id = null;
             
-            // For WSDL mode
-            if (is_object($params) && isset($params->id)) {
+            if (is_array($params) && isset($params['id'])) {
+                $id = $params['id'];
+            } elseif (is_object($params) && isset($params->id)) {
                 $id = $params->id;
-            }
-            // For non-WSDL mode, the parameter might come as an array
-            elseif (is_array($params) && isset($params[0])) {
-                $id = is_object($params[0]) && isset($params[0]->id) ? $params[0]->id : $params[0];
-            }
-            // Direct parameter
-            else {
+            } else {
                 $id = $params;
             }
             
             // Convert to integer
             $id = (int)$id;
             
-            $address = Address::find($id);
-            if (!$address) {
+            // Check if address exists
+            $stmt = $this->pdo->prepare("SELECT id FROM addresses WHERE id = ?");
+            $stmt->execute([$id]);
+            if (!$stmt->fetch()) {
                 return ['success' => false, 'message' => 'Address not found'];
             }
-
-            $address->delete();
-
-            return ['success' => true, 'message' => 'Address deleted successfully'];
-        } catch (Exception $e) {
+            
+            // Delete the address
+            $stmt = $this->pdo->prepare("DELETE FROM addresses WHERE id = ?");
+            $stmt->execute([$id]);
+            
+            return [
+                'success' => true, 
+                'message' => 'Address deleted successfully'
+            ];
+        } catch (PDOException $e) {
             // Log the error for debugging
             error_log('SOAP deleteAddress error: ' . $e->getMessage());
             return ['success' => false, 'message' => 'Error deleting address: ' . $e->getMessage()];
@@ -665,27 +720,19 @@ class ContactService
      * Get all addresses for a contact
      * 
      * @param mixed $params Contact ID
-     * @return array Addresses array or error response
+     * @return mixed List of addresses or error response
      */
     public function getContactAddresses($params)
     {
         try {
-            // Debug the input
-            error_log('SOAP getContactAddresses input: ' . print_r($params, true));
-            
-            // Extract contact_id from different parameter formats
+            // Extract contact ID from parameters
             $contactId = null;
             
-            // For WSDL mode
-            if (is_object($params) && isset($params->contact_id)) {
+            if (is_array($params) && isset($params['contact_id'])) {
+                $contactId = $params['contact_id'];
+            } elseif (is_object($params) && isset($params->contact_id)) {
                 $contactId = $params->contact_id;
-            }
-            // For non-WSDL mode, the parameter might come as an array
-            elseif (is_array($params) && isset($params[0])) {
-                $contactId = is_object($params[0]) && isset($params[0]->contact_id) ? $params[0]->contact_id : $params[0];
-            }
-            // Direct parameter
-            else {
+            } else {
                 $contactId = $params;
             }
             
@@ -693,29 +740,22 @@ class ContactService
             $contactId = (int)$contactId;
             
             // Check if contact exists
-            $contact = Contact::find($contactId);
-            if (!$contact) {
+            $stmt = $this->pdo->prepare("SELECT id FROM contacts WHERE id = ?");
+            $stmt->execute([$contactId]);
+            if (!$stmt->fetch()) {
                 return ['success' => false, 'message' => 'Contact not found'];
             }
             
-            // Get all addresses for this contact
-            $addresses = Address::where('contact_id', $contactId)->get();
+            // Get all addresses for the contact
+            $stmt = $this->pdo->prepare("SELECT * FROM addresses WHERE contact_id = ?");
+            $stmt->execute([$contactId]);
+            $addresses = $stmt->fetchAll();
             
-            $result = [];
-            foreach ($addresses as $address) {
-                $result[] = [
-                    'id' => $address->id,
-                    'contact_id' => $address->contact_id,
-                    'street' => $address->street,
-                    'city' => $address->city,
-                    'province' => $address->province,
-                    'country' => $address->country,
-                    'postal_code' => $address->postal_code
-                ];
-            }
-            
-            return ['address' => $result];
-        } catch (Exception $e) {
+            return [
+                'success' => true,
+                'addresses' => $addresses
+            ];
+        } catch (PDOException $e) {
             // Log the error for debugging
             error_log('SOAP getContactAddresses error: ' . $e->getMessage());
             return ['success' => false, 'message' => 'Error retrieving addresses: ' . $e->getMessage()];
@@ -723,10 +763,13 @@ class ContactService
     }
 }
 
+// Instantiate service
+$service = new ContactService($pdo);
+
 // Check if WSDL is requested
 if (isset($_GET['wsdl'])) {
     // Serve the WSDL file
-    $wsdlPath = __DIR__ . '/contact.wsdl';
+    $wsdlPath = __DIR__ . '/api_documentation.wsdl';
     if (file_exists($wsdlPath)) {
         header('Content-Type: text/xml');
         readfile($wsdlPath);
@@ -739,7 +782,7 @@ if (isset($_GET['wsdl'])) {
 
 // Create SOAP server
 $options = [
-    'uri' => 'http://localhost/contact-api/soap/contact'
+    'uri' => 'http://localhost/contact-api/soap/api'
 ];
 
 // Check if WSDL mode is requested
@@ -751,8 +794,8 @@ if (isset($_GET['mode']) && $_GET['mode'] === 'wsdl') {
     $server = new SoapServer(null, $options);
 }
 
-// Set the class which contains the SOAP functions
-$server->setClass('ContactService');
+// Set the service object
+$server->setObject($service);
 
 // Handle the request
 $server->handle();
